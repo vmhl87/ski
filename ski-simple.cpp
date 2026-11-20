@@ -979,7 +979,7 @@ int main() {
 */
 
 /*
-	// reformat lambda calc
+	// lower lambda calc to SKI
 	std::string s; std::getline(std::cin, s);
 	term_t expr_lam = lambda_from_str(s);
 	node_t expr = reduce(expr_lam);
@@ -992,7 +992,7 @@ int main() {
 	auto t1 = std::chrono::steady_clock::now();
 	node_t expr = ski_from_str(s);
 	auto t2 = std::chrono::steady_clock::now();
-	node_t expr_r = reduce(expr);
+	expr = reduce(expr);
 	auto t3 = std::chrono::steady_clock::now();
 	std::cout << print(expr) << '\n';
 	{
@@ -1005,7 +1005,7 @@ int main() {
 		auto ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
 		std::cout << "reduce: " << ns << " (" << ms << " ms)\n";
 	};
-	cleanup(expr_r);
+	cleanup(expr);
 	return 0;
 */
 
