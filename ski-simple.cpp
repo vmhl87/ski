@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -701,25 +702,25 @@ term_t lambda_from_str(std::string Str) {
 			for (int j=0; j<static_cast<int>(END); j++) {
 				std::string J = print(static_cast<symbol_t>(j));
 				if (match_2(str, i, J)) {
-					root->add_node(new lambda_parse_node(
-						str.substr(i, J.length())
-					));
+					root->add_node(new lambda_parse_node(J));
 					i += J.length();
 					is_combinator = true;
 					break;
 				}
 			}
 
-			if (!is_combinator && is_alpha(c)) {
-				size_t j = i+1;
-				while (j < str.length() && is_alphanumeric(str[j])) j++;
-				if (j >= str.length() ||
-						(str[j] != ' ' && str[j] != ')' && str[j] != '('))
-					return NULL;
-				root->add_node(new lambda_parse_node(str.substr(i, j-i)));
-				i = j;
+			if (!is_combinator) {
+				if (is_alpha(c)) {
+					size_t j = i+1;
+					while (j < str.length() && is_alphanumeric(str[j])) j++;
+					if (j >= str.length() ||
+							(str[j] != ' ' && str[j] != ')' && str[j] != '('))
+						return NULL;
+					root->add_node(new lambda_parse_node(str.substr(i, j-i)));
+					i = j;
 
-			} else i++;
+				} else i++;
+			}
 		}
 	}
 
@@ -831,27 +832,15 @@ DEBUG << "   " << print(t->right->d.Comb) << '\n';
 		} else return NULL;
 
 	} else if(t->t == Application) {
-//DEBUG << "current term is an application\n";
-//DEBUG << " " << print(t) << '\n';
-//DEBUG << "  left side: " << print(t->left) << '\n';
-//DEBUG << "RECURSE IN\n";
 		term_t l = inner_reduce(t->left);
-//DEBUG << "RECURSE OUT\n";
-//DEBUG << "  right side: " << print(t->right) << '\n';
-//DEBUG << "RECURSE IN\n";
 		term_t r = inner_reduce(t->right);
-//DEBUG << "RECURSE OUT\n";
 		if (l == NULL || r == NULL) return NULL;
 		return new term(l, r);
 
 	} else if (t->t == Int) {
-//DEBUG << "current term is an integer\n";
-//DEBUG << " " << t->d.Int << '\n';
 		return new term(t->d.Int);
 
 	} else if (t->t == Comb) {
-//DEBUG << "current term is a combinator\n";
-//DEBUG << " " << print(t->d.Comb) << '\n';
 		return new term(t->d.Comb);
 
 	} else if (t->t == Var) {
@@ -882,7 +871,7 @@ DEBUG << "-------------------------\n";
 	return res;
 }
 
-int main() {
+void demo() {
 	{
 		node_t expr = ski_from_str("IK(KSS)");
 		node_t expr_reduced = reduce(clone(expr));
@@ -1017,4 +1006,38 @@ int main() {
 		cleanup(expr);
 		cleanup(expr_r);
 	};
+
+	std::cout << '\n';
+
+	{
+		term_t expr_lam = lambda_from_str("S (Lx.S (La.a) (K x)) [*] 1111");
+		node_t expr = reduce(expr_lam);
+		node_t expr_r = reduce(clone(expr));
+		std::cout << print(expr_lam) << " ->\n  " << print(expr);
+		std::cout << " -> " << print(expr_r) << '\n';
+		cleanup(expr_lam);
+		cleanup(expr);
+		cleanup(expr_r);
+	};
+}
+
+int main() {
+	while (true) {
+		std::string s; std::getline(std::cin, s);
+		std::replace(s.begin(), s.end(), '\n', ' ');
+		std::replace(s.begin(), s.end(), '\t', ' ');
+		if (s == "exit" || s == "") break;
+		if (s == "demo") {
+			demo();
+			return 0;
+		}
+		term_t expr_lam = lambda_from_str(s);
+		node_t expr = reduce(expr_lam);
+		node_t expr_r = reduce(clone(expr));
+		std::cout << print(expr_lam) << " -> ";
+		std::cout << print(expr) << " -> " << print(expr_r) << '\n';
+		cleanup(expr_lam);
+		cleanup(expr);
+		cleanup(expr_r);
+	}
 }
