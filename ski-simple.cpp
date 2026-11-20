@@ -6,9 +6,6 @@
 
 #include <chrono>
 
-#define _debug false
-#define DEBUG if (_debug) std::cout
-
 bool is_alpha(char c) {
 	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
 }
@@ -41,7 +38,6 @@ enum symbol_t {
 	END,
 };
 
-// Only prints valid combinators
 std::string print(symbol_t s) {
 	if (s == S) return "S";
 	else if (s == K) return "K";
@@ -262,7 +258,7 @@ std::string print_long(node_t n) {
 node_t clone(node_t n) {
 	if (n == NULL) return NULL;
 	if (n->s == None) return new node(clone(n->left), clone(n->right));
-	return new node(n->s, n->d);
+	return copy(n);
 }
 
 void cleanup_once(node_t n) {
@@ -324,7 +320,8 @@ node_t inner_reduce(node_t n) {
 		return inner_reduce(ret);
 	}
 
-	if (n->left->s == None && n->left->left->s == None) {
+	if (n->left->s == None && n->left->left->s == None &&
+			n->left->left->left->s == S) {
 		node_t x = n->left->left->right;
 		node_t y = n->left->right;
 		node_t z = n->right;
@@ -336,115 +333,44 @@ node_t inner_reduce(node_t n) {
 		return inner_reduce(new node(new node(x, z), new node(y, z)));
 	}
 
-	if (n->left->s == None && n->left->left->s == Plus) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			int res = n->left->right->d.Integer + n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
+#define BIOP_INT(name, op) \
+	if (n->left->s == None && n->left->left->s == name) { \
+		n->left->right = inner_reduce(n->left->right); \
+		n->right = inner_reduce(n->right); \
+		if (n->left->right->s == Integer && n->right->s == Integer) { \
+			int res = n->left->right->d.Integer op n->right->d.Integer; \
+			cleanup_once(n); \
+			return new node(res); \
+		} \
 	}
 
-	if (n->left->s == None && n->left->left->s == Minus) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			int res = n->left->right->d.Integer - n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
+	BIOP_INT(Plus, +)
+	BIOP_INT(Minus, -)
+	BIOP_INT(Times, *)
+	BIOP_INT(Divide, /)
+	BIOP_INT(Mod, %)
+
+#undef BIOP_INT
+
+#define BIOP_INT(name, op) \
+	if (n->left->s == None && n->left->left->s == name) { \
+		n->left->right = inner_reduce(n->left->right); \
+		n->right = inner_reduce(n->right); \
+		if (n->left->right->s == Integer && n->right->s == Integer) { \
+			bool res = n->left->right->d.Integer op n->right->d.Integer; \
+			cleanup_once(n); \
+			return new node(res); \
+		} \
 	}
 
-	if (n->left->s == None && n->left->left->s == Times) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			int res = n->left->right->d.Integer * n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
+	BIOP_INT(Less, <)
+	BIOP_INT(LessEq, <=)
+	BIOP_INT(Equal, ==)
+	BIOP_INT(NotEqual, !=)
+	BIOP_INT(GreaterEq, >=)
+	BIOP_INT(Greater, >)
 
-	if (n->left->s == None && n->left->left->s == Divide) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			int res = n->left->right->d.Integer / n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == Mod) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			int res = n->left->right->d.Integer % n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == Less) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer < n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == LessEq) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer <= n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == Equal) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer == n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == NotEqual) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer != n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == GreaterEq) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer >= n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
-
-	if (n->left->s == None && n->left->left->s == GreaterEq) {
-		n->left->right = inner_reduce(n->left->right);
-		n->right = inner_reduce(n->right);
-		if (n->left->right->s == Integer && n->right->s == Integer) {
-			bool res = n->left->right->d.Integer > n->right->d.Integer;
-			cleanup(n);
-			return new node(res);
-		}
-	}
+#undef BIOP_INT
 
 	return n;
 }
@@ -480,7 +406,6 @@ std::string at_index(string_index_t i) {
 }
 
 struct lambda_term_data {
-	//std::string Var;
 	string_index_t Var;
 	int Int;
 	symbol_t Comb;
@@ -777,90 +702,53 @@ bool uses_var(term_t t, string_index_t var) {
 
 term_t inner_reduce(term_t t) {
 	if (t->t == Function) {
-DEBUG << "current term is a function\n";
-DEBUG << " " << print(t) << '\n';
 		if (t->left == NULL || t->left->t != Var) return NULL;
 		string_index_t arg = t->left->d.Var;
 		if (t->right == NULL) return NULL;
 
 		if (t->right->t == Function) {
-DEBUG << "  right side is a function\n";
-DEBUG << "   " << print(t->right) << '\n';
-DEBUG << "RECURSE IN\n";
 			term_t body = inner_reduce(t->right);
-DEBUG << "RECURSE OUT\n";
-DEBUG << "  new right\n";
-DEBUG << "   " << print(body) << '\n';
 			term_t head = new term(arg, body);
 			term_t res = inner_reduce(head);
 			cleanup(head);
 			return res;
 			
 		} else if (t->right->t == Application) {
-DEBUG << "  right side is an application\n";
 			term_t T = t->right;
 			if (T->right->t == Var && T->right->d.Var == arg &&
 					!uses_var(T->left, arg)) {
-DEBUG << "   short circuiting Lx.c x -> c\n";
 				return inner_reduce(T->left);
+
 			} else {
 				term_t l = NULL, r = NULL;
 
 				if (uses_var(T->left, arg)) {
-DEBUG << "   left side depends on arg\n";
-DEBUG << "    " << print(T->left) << '\n';
 					term_t head = new term(arg, clone(T->left));
-DEBUG << "RECURSE IN\n";
 					l = inner_reduce(head);
-DEBUG << "RECURSE OUT\n";
 					cleanup(head);
-				} else {
-DEBUG << "   left side independent\n";
-DEBUG << "    " << print(T->left) << '\n';
-DEBUG << "RECURSE IN\n";
-					l = new term(new term(K), inner_reduce(T->left));
-DEBUG << "RECURSE OUT\n";
-				}
+
+				} else l = new term(new term(K), inner_reduce(T->left));
 
 				if (uses_var(T->right, arg)) {
-DEBUG << "   right side depends on arg\n";
-DEBUG << "    " << print(T->right) << '\n';
 					term_t head = new term(arg, clone(T->right));
-DEBUG << "RECURSE IN\n";
 					r = inner_reduce(head);
-DEBUG << "RECURSE OUT\n";
 					cleanup(head);
-				} else {
-DEBUG << "   right side independent\n";
-DEBUG << "    " << print(T->right) << '\n';
-DEBUG << "RECURSE IN\n";
-					r = new term(new term(K), inner_reduce(T->right));
-DEBUG << "RECURSE OUT\n";
-				}
 
-if (l == NULL) DEBUG << "L IS NULL\n";
-if (r == NULL) DEBUG << "R IS NULL\n";
+				} else r = new term(new term(K), inner_reduce(T->right));
 
 				if (l == NULL || r == NULL) return NULL;
-DEBUG << "out " << print(new term(new term(new term(S), l), r)) << '\n';
 				return new term(new term(new term(S), l), r);
 			}
 
 		} else if (t->right->t == Var) {
-DEBUG << "  right side is a variable\n";
-DEBUG << "   " << at_index(t->right->d.Var) << '\n';
 			if (t->right->d.Var == arg) return new term(I);
 			else return new term(new term(K), new term(t->right->d.Var));
 
 		} else if (t->right->t == Int) {
-DEBUG << "  right side is an integer\n";
-DEBUG << "   " << t->right->d.Int << '\n';
-			return new term(t->right->d.Int);
+			return new term(new term(K), new term(t->right->d.Int));
 
 		} else if (t->right->t == Comb) {
-DEBUG << "  right side is a combinator\n";
-DEBUG << "   " << print(t->right->d.Comb) << '\n';
-			return new term(t->right->d.Comb);
+			return new term(new term(K), new term(t->right->d.Comb));
 
 		} else return NULL;
 
@@ -870,16 +758,10 @@ DEBUG << "   " << print(t->right->d.Comb) << '\n';
 		if (l == NULL || r == NULL) return NULL;
 		return new term(l, r);
 
-	} else if (t->t == Int) {
-		return new term(t->d.Int);
-
-	} else if (t->t == Comb) {
-		return new term(t->d.Comb);
-
-	} else if (t->t == Var) {
-		return new term(t->d.Var);
-				
-	} return NULL;
+	} else if (t->t == Int) return new term(t->d.Int);
+	else if (t->t == Comb) return new term(t->d.Comb);
+	else if (t->t == Var) return new term(t->d.Var);
+	return NULL;
 }
 
 node_t outer_reduce(term_t t) {
@@ -897,9 +779,7 @@ node_t outer_reduce(term_t t) {
 
 node_t reduce(term_t t) {
 	if (t == NULL) return NULL;
-DEBUG << "-------------------------\n";
 	term_t T = inner_reduce(t);
-DEBUG << "-------------------------\n";
 	node_t res = outer_reduce(T);
 	cleanup(T);
 	return res;
@@ -1053,17 +933,45 @@ void demo() {
 		cleanup(expr);
 		cleanup(expr_r);
 	};
+
+	std::cout << '\n';
+
+	{
+		term_t expr_lam = lambda_from_str(
+			"(Lf.(Lx.f(Lv.x x v))(Lx.f(Lv.x x v))) "
+			"(Li.(Lj.[<] j 2 (1) ([*] j (i ([-] j 1))))) "
+			"8"
+		);
+		node_t expr = reduce(expr_lam);
+		node_t expr_r = reduce(clone(expr));
+		std::cout << print(expr_lam) << " ->\n  " << print(expr);
+		std::cout << " -> " << print(expr_r) << '\n';
+		cleanup(expr_lam);
+		cleanup(expr);
+		cleanup(expr_r);
+	};
+
+	std::cout << '\n';
+
+	{
+		term_t expr_lam = lambda_from_str(
+			"(Lf.(Lx.f(Lv.x x v))(Lx.f(Lv.x x v))) "
+			"(Li.(Lj.[<] j 2 (1) ([+] (i ([-] j 1)) (i ([-] j 2))))) "
+			"6"
+		);
+		node_t expr = reduce(expr_lam);
+		node_t expr_r = reduce(clone(expr));
+		std::cout << print(expr_lam) << " ->\n  " << print(expr);
+		std::cout << " -> " << print(expr_r) << '\n';
+		cleanup(expr_lam);
+		cleanup(expr);
+		cleanup(expr_r);
+	};
 }
 
 int main() {
 /*
-	std::string s; std::getline(std::cin, s);
-	term_t expr_lam = lambda_from_str(s);
-	node_t expr = reduce(expr_lam);
-	std::cout << print(expr) << '\n';
-*/
-
-/*
+	// exec lambda calc
 	std::string s; std::getline(std::cin, s);
 	term_t expr_lam = lambda_from_str(s);
 	node_t expr = reduce(reduce(expr_lam));
@@ -1071,22 +979,48 @@ int main() {
 */
 
 /*
+	// reformat lambda calc
 	std::string s; std::getline(std::cin, s);
-	node_t expr = reduce(ski_from_str(s));
+	term_t expr_lam = lambda_from_str(s);
+	node_t expr = reduce(expr_lam);
 	std::cout << print(expr) << '\n';
 */
 
 /*
+	// exec SKI
+	std::string s; std::getline(std::cin, s);
+	auto t1 = std::chrono::steady_clock::now();
+	node_t expr = ski_from_str(s);
+	auto t2 = std::chrono::steady_clock::now();
+	node_t expr_r = reduce(expr);
+	auto t3 = std::chrono::steady_clock::now();
+	std::cout << print(expr) << '\n';
+	{
+		auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
+		auto ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+		std::cout << "parse: " << ns << " (" << ms << " ms)\n";
+	};
+	{
+		auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count();
+		auto ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
+		std::cout << "reduce: " << ns << " (" << ms << " ms)\n";
+	};
+	cleanup(expr_r);
+	return 0;
+*/
+
+/*
+	// reformat SKI
 	std::string s; std::getline(std::cin, s);
 	node_t expr = ski_from_str(s);
 	std::cout << print(expr) << '\n';
 */
 
 /*
+	// exec lambda calc with timing
 	std::string s; std::getline(std::cin, s);
 	auto t1 = std::chrono::steady_clock::now();
 	term_t expr = lambda_from_str(s);
-	//node_t expr = ski_from_str(s);
 	auto t2 = std::chrono::steady_clock::now();
 	node_t expr_r = reduce(expr);
 	auto t3 = std::chrono::steady_clock::now();
@@ -1108,26 +1042,24 @@ int main() {
 		auto ms = std::chrono::duration<double, std::milli>(t4 - t3).count();
 		std::cout << "reduce: " << ns << " (" << ms << " ms)\n";
 	};
+	cleanup(expr);
+	cleanup(expr_r);
 	return 0;
 */
 
 	while (true) {
 		std::string s; std::getline(std::cin, s);
-		std::replace(s.begin(), s.end(), '\n', ' ');
-		std::replace(s.begin(), s.end(), '\t', ' ');
 		if (s == "exit" || s == "") break;
 		if (s == "demo") {
 			demo();
 			return 0;
 		}
 		term_t expr_lam = lambda_from_str(s);
-		std::cout << print(expr_lam) << " -> "; std::flush(std::cout);
 		node_t expr = reduce(expr_lam);
 		std::cout << print(expr) << " -> "; std::flush(std::cout);
-		node_t expr_r = reduce(clone(expr));
-		std::cout << print(expr_r) << '\n';
+		expr = reduce(expr);
+		std::cout << print(expr) << '\n';
 		cleanup(expr_lam);
 		cleanup(expr);
-		cleanup(expr_r);
 	}
 }
