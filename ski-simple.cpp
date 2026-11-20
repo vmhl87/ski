@@ -4,6 +4,8 @@
 #include <string>
 #include <map>
 
+#include <chrono>
+
 #define _debug false
 #define DEBUG if (_debug) std::cout
 
@@ -67,22 +69,29 @@ struct node {
 	node *right = NULL;
 	symbol_t s;
 	data_t d;
+	size_t refcount;
+
+	node() {}
 
 	node(symbol_t sym) {
+		refcount = 1;
 		s = sym;
 	}
 
 	node(symbol_t sym, data_t dat) {
+		refcount = 1;
 		s = sym;
 		d = dat;
 	}
 
 	node(int i) {
+		refcount = 1;
 		s = Integer;
 		d.Integer = i;
 	}
 
 	node(bool b) {
+		refcount = 1;
 		if (b) {
 			s = K;
 		} else {
@@ -93,6 +102,7 @@ struct node {
 	}
 
 	node(node *l, node *r) {
+		refcount = 1;
 		left = l;
 		right = r;
 		s = None;
@@ -100,6 +110,17 @@ struct node {
 };
 
 typedef node* node_t;
+
+node_t copy(node_t n) {
+	if (n == NULL) return NULL;
+	node_t ret = new node();
+	ret->left = n->left;
+	ret->right = n->right;
+	ret->s = n->s;
+	ret->d = n->d;
+	ret->refcount = 1;
+	return ret;
+}
 
 bool match(std::string str, size_t i, std::string pattern) {
 	if (str.length() < pattern.length() + i) return false;
@@ -245,44 +266,62 @@ node_t clone(node_t n) {
 }
 
 void cleanup_once(node_t n) {
-	free(n);
+	n->refcount--;
+	if (n->refcount == 0) free(n);
 }
 
 void cleanup(node_t n) {
 	if (n == NULL) return;
-	if (n->s == None) cleanup(n->left), cleanup(n->right), free(n);
-	else cleanup_once(n);
+	if (n->s == None) {
+		n->refcount--;
+		if (n->refcount == 0) cleanup(n->left), cleanup(n->right), free(n);
+	} else cleanup_once(n);
 }
 
-node_t apply(node_t a, node_t b) {
-	if (a == NULL && b == NULL) return NULL;
-	if (a == NULL) return b;
-	if (b == NULL) return a;
-	return new node(clone(a), clone(b));
-}
+node_t inner_reduce(node_t n) {
+	if (n->refcount > 1) {
+		n->refcount--;
+		if (n->s == None) n->left->refcount++, n->right->refcount++;
+		n = copy(n);
+	}
 
-node_t inner_reduce(node_t n, bool full) {
+	if (n->s == None) {
+		if (n->left->refcount > 1) {
+			n->left->refcount--;
+			if (n->left->s == None)
+				n->left->left->refcount++, n->left->right->refcount++;
+			n->left = copy(n->left);
+		}
+
+		if (n->left->s == None) {
+			if (n->left->left->refcount > 1) {
+				n->left->left->refcount--;
+				if (n->left->left->s == None)
+					n->left->left->left->refcount++,
+						n->left->left->right->refcount++;
+				n->left->left = copy(n->left->left);
+			}
+		}
+	}
+
 	if (n->s != None) return n;
 
-	n->left = inner_reduce(n->left, full);
-	if (full) n->right = inner_reduce(n->right, full);
+	n->left = inner_reduce(n->left);
 
 	if (n->left->s == I) {
-		if (!full) n->right = inner_reduce(n->right, full);
 		node_t ret = n->right;
 		cleanup_once(n->left);
 		cleanup_once(n);
-		return ret;
+		return inner_reduce(ret);
 	}
 
 	if (n->left->s == None && n->left->left->s == K) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
 		node_t ret = n->left->right;
 		cleanup(n->right);
 		cleanup_once(n->left->left);
 		cleanup_once(n->left);
 		cleanup_once(n);
-		return ret;
+		return inner_reduce(ret);
 	}
 
 	if (n->left->s == None && n->left->left->s == None) {
@@ -293,17 +332,13 @@ node_t inner_reduce(node_t n, bool full) {
 		cleanup_once(n->left->left);
 		cleanup_once(n->left);
 		cleanup_once(n);
-		//z->refcount++;
-		//return inner_reduce(new node(new node(x, z), new node(y, z)), full);
-		return inner_reduce(new node(
-			new node(x, z),
-			new node(y, clone(z))
-		), full);
+		z->refcount++;
+		return inner_reduce(new node(new node(x, z), new node(y, z)));
 	}
 
 	if (n->left->s == None && n->left->left->s == Plus) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			int res = n->left->right->d.Integer + n->right->d.Integer;
 			cleanup(n);
@@ -312,8 +347,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Minus) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			int res = n->left->right->d.Integer - n->right->d.Integer;
 			cleanup(n);
@@ -322,8 +357,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Times) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			int res = n->left->right->d.Integer * n->right->d.Integer;
 			cleanup(n);
@@ -332,8 +367,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Divide) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			int res = n->left->right->d.Integer / n->right->d.Integer;
 			cleanup(n);
@@ -342,8 +377,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Mod) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			int res = n->left->right->d.Integer % n->right->d.Integer;
 			cleanup(n);
@@ -352,8 +387,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Less) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer < n->right->d.Integer;
 			cleanup(n);
@@ -362,8 +397,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == LessEq) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer <= n->right->d.Integer;
 			cleanup(n);
@@ -372,8 +407,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == Equal) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer == n->right->d.Integer;
 			cleanup(n);
@@ -382,8 +417,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == NotEqual) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer != n->right->d.Integer;
 			cleanup(n);
@@ -392,8 +427,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == GreaterEq) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer >= n->right->d.Integer;
 			cleanup(n);
@@ -402,8 +437,8 @@ node_t inner_reduce(node_t n, bool full) {
 	}
 
 	if (n->left->s == None && n->left->left->s == GreaterEq) {
-		if (!full) n->left->right = inner_reduce(n->left->right, full);
-		if (!full) n->right = inner_reduce(n->right, full);
+		n->left->right = inner_reduce(n->left->right);
+		n->right = inner_reduce(n->right);
 		if (n->left->right->s == Integer && n->right->s == Integer) {
 			bool res = n->left->right->d.Integer > n->right->d.Integer;
 			cleanup(n);
@@ -411,14 +446,12 @@ node_t inner_reduce(node_t n, bool full) {
 		}
 	}
 
-	n->right = inner_reduce(n->right, full);
-
 	return n;
 }
 
 node_t reduce(node_t n) {
 	if (n == NULL) return NULL;
-	return inner_reduce(n, 0);
+	return inner_reduce(n);
 }
 
 enum lambda_term_type {
@@ -863,6 +896,7 @@ node_t outer_reduce(term_t t) {
 }
 
 node_t reduce(term_t t) {
+	if (t == NULL) return NULL;
 DEBUG << "-------------------------\n";
 	term_t T = inner_reduce(t);
 DEBUG << "-------------------------\n";
@@ -1022,6 +1056,61 @@ void demo() {
 }
 
 int main() {
+/*
+	std::string s; std::getline(std::cin, s);
+	term_t expr_lam = lambda_from_str(s);
+	node_t expr = reduce(expr_lam);
+	std::cout << print(expr) << '\n';
+*/
+
+/*
+	std::string s; std::getline(std::cin, s);
+	term_t expr_lam = lambda_from_str(s);
+	node_t expr = reduce(reduce(expr_lam));
+	std::cout << print(expr) << '\n';
+*/
+
+/*
+	std::string s; std::getline(std::cin, s);
+	node_t expr = reduce(ski_from_str(s));
+	std::cout << print(expr) << '\n';
+*/
+
+/*
+	std::string s; std::getline(std::cin, s);
+	node_t expr = ski_from_str(s);
+	std::cout << print(expr) << '\n';
+*/
+
+/*
+	std::string s; std::getline(std::cin, s);
+	auto t1 = std::chrono::steady_clock::now();
+	term_t expr = lambda_from_str(s);
+	//node_t expr = ski_from_str(s);
+	auto t2 = std::chrono::steady_clock::now();
+	node_t expr_r = reduce(expr);
+	auto t3 = std::chrono::steady_clock::now();
+	expr_r = reduce(expr_r);
+	auto t4 = std::chrono::steady_clock::now();
+	std::cout << print(expr_r) << '\n';
+	{
+		auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
+		auto ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+		std::cout << "parse: " << ns << " (" << ms << " ms)\n";
+	};
+	{
+		auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count();
+		auto ms = std::chrono::duration<double, std::milli>(t3 - t2).count();
+		std::cout << "lower: " << ns << " (" << ms << " ms)\n";
+	};
+	{
+		auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t4 - t3).count();
+		auto ms = std::chrono::duration<double, std::milli>(t4 - t3).count();
+		std::cout << "reduce: " << ns << " (" << ms << " ms)\n";
+	};
+	return 0;
+*/
+
 	while (true) {
 		std::string s; std::getline(std::cin, s);
 		std::replace(s.begin(), s.end(), '\n', ' ');
@@ -1032,10 +1121,11 @@ int main() {
 			return 0;
 		}
 		term_t expr_lam = lambda_from_str(s);
+		std::cout << print(expr_lam) << " -> "; std::flush(std::cout);
 		node_t expr = reduce(expr_lam);
+		std::cout << print(expr) << " -> "; std::flush(std::cout);
 		node_t expr_r = reduce(clone(expr));
-		std::cout << print(expr_lam) << " -> ";
-		std::cout << print(expr) << " -> " << print(expr_r) << '\n';
+		std::cout << print(expr_r) << '\n';
 		cleanup(expr_lam);
 		cleanup(expr);
 		cleanup(expr_r);
