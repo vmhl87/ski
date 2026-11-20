@@ -159,7 +159,7 @@ node_t ski_from_str(std::string str) {
 	size_t i = 0;
 
 	while (i < str.length()) {
-		if (str[i] == ' ') continue;
+		if (str[i] == ' ') i++;
 		else if (str[i] == '(') {
 			i++;
 			if (root != NULL) st.push_back(root);
@@ -242,7 +242,8 @@ node_t ski_from_str(std::string str) {
 					root = new node(left, next);
 				}
 			}
-		}
+
+		} else i++;
 	}
 
 	if (st.size()) return NULL;
