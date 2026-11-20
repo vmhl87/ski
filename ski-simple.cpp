@@ -159,12 +159,13 @@ node_t ski_from_str(std::string str) {
 	size_t i = 0;
 
 	while (i < str.length()) {
-		if (match(str, i, "(")) {
+		if (str[i] == ' ') continue;
+		else if (str[i] == '(') {
 			i++;
 			if (root != NULL) st.push_back(root);
 			root = NULL;
 
-		} else if (match(str, i, ")")) {
+		} else if (str[i] == ')') {
 			i++;
 			if (st.size()) {
 				if (root == NULL) return NULL;
@@ -173,58 +174,73 @@ node_t ski_from_str(std::string str) {
 				st.pop_back();
 			}
 
-		} else if (match(str, i, "[True]")) {
-			i += 6;
-			node *next = new node(true);
-			if (root == NULL) root = next;
-			else {
-				node *left = root;
-				root = new node(left, next);
+#define PARSE_COMBINATOR(sym) \
+		} else if (str[i] == (#sym[0])) { \
+			i++; \
+			node *next = new node(sym); \
+			if (root == NULL) root = next; \
+			else { \
+				node *left = root; \
+				root = new node(left, next); \
 			}
 
-		} else if (match(str, i, "[False]")) {
-			i += 7;
-			node *next = new node(false);
-			if (root == NULL) root = next;
-			else {
-				node *left = root;
-				root = new node(left, next);
-			}
+		PARSE_COMBINATOR(S)
+		PARSE_COMBINATOR(K)
+		PARSE_COMBINATOR(I)
 
-		} else {
-			symbol_t sym = None;
-			data_t dat;
+#undef PARSE_COMBINATOR
 
-			if (match(str, i, "S")) sym = S, i++;
-			else if (match(str, i, "K")) sym = K, i++;
-			else if (match(str, i, "I")) sym = I, i++;
-			else if (match(str, i, "[+]")) sym = Plus, i+=3;
-			else if (match(str, i, "[-]")) sym = Minus, i+=3;
-			else if (match(str, i, "[*]")) sym = Times, i+=3;
-			else if (match(str, i, "[/]")) sym = Divide, i+=3;
-			else if (match(str, i, "[%]")) sym = Mod, i+=3;
-			else if (match(str, i, "[<]")) sym = Less, i+=3;
-			else if (match(str, i, "[<=]")) sym = LessEq, i+=4;
-			else if (match(str, i, "[==]")) sym = Equal, i+=4;
-			else if (match(str, i, "[!=]")) sym = NotEqual, i+=4;
-			else if (match(str, i, "[>=]")) sym = Greater, i+=4;
-			else if (match(str, i, "[>]")) sym = GreaterEq, i+=3;
-			else if (match_int(str, i, &dat.Integer)) {
-				sym = Integer;
-				i++;
-				while (str[i] != ']') i++;
-				i++;
+		} else if (str[i] == '[') {
+			if (match(str, i, "[True]")) {
+				i += 6;
+				node *next = new node(true);
+				if (root == NULL) root = next;
+				else {
+					node *left = root;
+					root = new node(left, next);
+				}
+
+			} else if (match(str, i, "[False]")) {
+				i += 7;
+				node *next = new node(false);
+				if (root == NULL) root = next;
+				else {
+					node *left = root;
+					root = new node(left, next);
+				}
+
 			} else {
-				i++;
-				continue;
-			}
+				symbol_t sym = None;
+				data_t dat;
 
-			node *next = new node(sym, dat);
+				if (match(str, i, "[+]")) sym = Plus, i+=3;
+				else if (match(str, i, "[-]")) sym = Minus, i+=3;
+				else if (match(str, i, "[*]")) sym = Times, i+=3;
+				else if (match(str, i, "[/]")) sym = Divide, i+=3;
+				else if (match(str, i, "[%]")) sym = Mod, i+=3;
+				else if (match(str, i, "[<]")) sym = Less, i+=3;
+				else if (match(str, i, "[<=]")) sym = LessEq, i+=4;
+				else if (match(str, i, "[==]")) sym = Equal, i+=4;
+				else if (match(str, i, "[!=]")) sym = NotEqual, i+=4;
+				else if (match(str, i, "[>=]")) sym = Greater, i+=4;
+				else if (match(str, i, "[>]")) sym = GreaterEq, i+=3;
+				else if (match_int(str, i, &dat.Integer)) {
+					sym = Integer;
+					i++;
+					while (str[i] != ']') i++;
+					i++;
+				} else {
+					i++;
+					continue;
+				}
 
-			if (root == NULL) root = next;
-			else {
-				node *left = root;
-				root = new node(left, next);
+				node *next = new node(sym, dat);
+
+				if (root == NULL) root = next;
+				else {
+					node *left = root;
+					root = new node(left, next);
+				}
 			}
 		}
 	}
